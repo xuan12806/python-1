@@ -1,0 +1,125 @@
+import pandas as pd
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def stage1_data_preprocessing(filename='complaints.csv'):
+    """
+    Stage1: 消费者金融投诉数据的清洗与基础分析
+    """
+    print("⏳ 正在读取 CFPB 消费者投诉数据集...")
+
+    # Step 1: 检查文件是否存在
+    if not os.path.exists(filename):
+        print(f"❌ 文件未找到: {filename}")
+        return None
+
+    # Step 2: 读取原始 CSV 文件
+    try:
+        traffic_df = pd.read_csv(filename, encoding='utf-8')
+    except Exception as e:
+        print(f"⚠️ 数据读取失败: {str(e)}")
+        return None
+
+    # Step 3: 数据基本信息
+    print(f"\n📊 数据基本信息：{len(traffic_df)}条记录，{len(traffic_df.columns)}列")
+    print("📝 列表和字段说明（前5行）：")
+    print(traffic_df.head(5))
+    print("\n📊 哪些字段的缺失率较高？")
+    print(traffic_df.isna().sum())
+
+    # Step 4: 定义要保留的字段（如删除非关键字段）
+    # 下面字段缺失较多或无法有效分析，建议删除
+    columns_to_drop = [
+        'Consumer complaint narrative',   # 投诉内容文本，缺失率高
+        'ZIP code',                        # 邮编信息，缺失率高
+        'Tags',                            # 标签信息，缺失率高
+        'Company public response',         # 公司响应内容，缺失率高
+        'Sub-issue',                        # 投诉子项，缺失率高
+        'Consumer submitted via',           # 投诉方式，缺失率高
+        'Consumer report',                  # 是否提交报告，缺失率高
+    ]
+
+    # Step 5: 删除无用列
+    traffic_df = traffic_df.drop(columns=columns_to_drop, errors='ignore')
+    print("\n✂️ 删除无用字段（如缺失率高的字段）...")
+    print("✅ 已删除字段：", columns_to_drop)
+
+    # Step 6: 转换字段类型（关键字段为 datetime 和 int）
+    print("\n🔄 转换数据类型...")
+
+    # 尝试将日期字段转换为 datetime 类型
+    try:
+        traffic_df['Date received'] = pd.to_datetime(
+            traffic_df['Date received'],
+            infer_datetime_format=True,
+            dayfirst=False,
+            errors='coerce'
+        )
+        traffic_df['Date sent to company'] = pd.to_datetime(
+            traffic_df['Date sent to company'],
+            infer_datetime_format=True,
+            dayfirst=False,
+            errors='coerce'
+        )
+    except Exception as e:
+        print(f"⚠️ 类型转换失败：{str(e)}")
+
+    # 尝试将 Complaint ID 转为整数
+    try:
+        traffic_df['Complaint ID'] = traffic_df['Complaint ID'].astype(int)
+    except Exception as e:
+        print(f"⚠️ 尝试将 Complaint ID 转换为整数失败：{str(e)}")
+
+    # Step 7: 计算响应时间（以天为单位）
+    print("\n⏱️ 计算投诉处理时间（响应天数）...")
+    try:
+        # 计算响应时间
+        traffic_df['response_time_days'] = (traffic_df['Date sent to company'] - traffic_df['Date received']).dt.days
+    except Exception as e:
+        print(f"⚠️ 响应时间计算失败：{str(e)}")
+        # 如果计算失败，记录错误
+        traffic_df['response_time_days'] = np.nan  # 用 NaN 表示失败
+
+    # Step 8: 根据 'Timely response?' 提取未被及时处理的投诉
+    print("\n🟥 过滤未被及时处理的投诉（基于 'Timely response?' 字段）...")
+    # 将 'Timely response?' 转换为布尔型
+    traffic_df['is_timely'] = traffic_df['Timely response?'].map({'Yes': True, 'No': False, 'N': False, 'Y': True})
+    # 获取未被及时处理的投诉
+    timely_complaints = traffic_df[traffic_df['is_timely'] == False]
+    print(f"✅ 成功提取未被及时处理的投诉：{len(timely_complaints)}条")
+
+    # Step 9: 输出统计分析结果（可选）
+    print("\n📊 未被及时处理的投诉分析（高风险）")
+    print("Top 10 投诉公司分布：")
+    print(timely_complaints['Company'].value_counts().head(10))
+    print("\nTop 10 投诉类型分布：")
+    print(timely_complaints['Issue'].value_counts().head(10))
+    print("\n响应时间分布（最低、平均、最高）：")
+    print(timely_complaints['response_time_days'].describe())
+
+    # Step 10: 可视化输出（可选）
+    print("\n📈 可视化分析（嵌入在代码内，可手动运行查看图表）")
+
+    # 响应时间分布直方图
+    plt.figure(figsize=(10, 6))
+    sns.histplot(timely_complaints['response_time_days'], bins=50, kde=False, color='skyblue')
+    plt.title('未被及时处理投诉的响应时间分布（天）')
+    plt.xlabel('天数')
+    plt.ylabel('投诉数量')
+    plt.grid(True)
+    plt.show()
+
+    # 投诉类型分布
+    plt.figure(figsize=(12, 6))
+    sns.countplot(data=timely_complaints, y='Issue', order=timely_complaints['Issue'].value_counts().index[:20], palette='viridis')
+    plt.title('高频投诉类型分布')
+    plt.xlabel('投诉数量')
+    plt.ylabel('投诉类型')
+    plt.show()
+
+
+# 调用函数进行处理
+filename = 'complaints.csv'
+stage1_data_preprocessing(filename)
